@@ -4,6 +4,9 @@ Allows for the creation of a trailing stop loss on Binance
 ## Support
 **Discord Chat for live support and general chat https://discord.gg/hxWGneV**
 
+## Disclaimer
+**Use at your own risk.**
+
 ## Getting Started
 
 ### Prerequisites
@@ -59,3 +62,7 @@ Current BNBBTC(2) Price: 0.00289980...
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
 
+## Donate
+If this script helped you out feel free to donate.
+* BTC: bc1qpszmsad8rcy50ze9wg7ntcxuktqmnuywfy3ucq
+* ETH: 0x0De6fDb75A34D148Bcd5a853b89a5aCBBD88db13
