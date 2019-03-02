@@ -77,11 +77,38 @@ def rise_price(current, gain_percent):
 
 
 def addcoin(symbol, original_price, gain_percent, loss_percent, stoploss, riseprice, quantity, precision, orderid):
+    """
+    Adds a coin to our db.json
+    :param symbol: Symbol Pair Example: LTCBTC
+    :param original_price: Starting price
+    :param gain_percent: Percentage above the starting price for the rise price
+    :param loss_percent: Percentage below the price for the stoploss
+    :param stoploss: The current stoploss price
+    :param riseprice: The current rise price
+    :param quantity: The quantity of the coin you are selling
+    :param precision: The number of digits after the decimal the exchange allows
+    :param orderid: The order ID from Binance
+    :return: None
+    """
     db.insert({'symbol': symbol, 'original_price': original_price, 'gain_percent': gain_percent, 'loss_percent': loss_percent, 'stoploss': stoploss, 'riseprice': riseprice,
                'quantity': quantity, 'precision': precision, 'active': "1", 'orderid': orderid})
 
 
 def checkcoin(symbol, riseprice, stoploss, original_price, orderid, quantity, loss_percent, gain_percent, precision, doc_id):
+    """
+    Checks the current price against the rise price and stoploss price
+    :param symbol: Symbol Pair Example: LTCBTC
+    :param riseprice: Price that once hit we remove old stop loss and create a new one
+    :param stoploss: Current stop loss price. Stop checking coin if we fall below this.
+    :param original_price: Starting price
+    :param orderid: The order ID from Binance
+    :param quantity: The quantity of the coin you are selling
+    :param loss_percent: Percentage below the price for the stoploss
+    :param gain_percent: Percentage above the starting price for the rise price
+    :param precision: The number of digits after the decimal the exchange allows
+    :param doc_id: The ID of the coin from our db.json
+    :return: None
+    """
     info = binance.get_symbol_ticker(symbol=symbol)
 
     if info['price'] >= original_price:
@@ -91,6 +118,7 @@ def checkcoin(symbol, riseprice, stoploss, original_price, orderid, quantity, lo
         print(bcolors.FAIL, "Current " + info['symbol'] + "(" + str(doc_id) + ") " + "Price: " + info['price'] + bcolors.ENDC + "| Waiting For:" + str(riseprice) +
               " | StopLoss: " + str(stoploss))
 
+    # The price has risen above our rise price. Cancel old stop loss and create a new one.
     if float(info['price']) > float(riseprice):
         binance.cancel_order(symbol=symbol, orderId=orderid)
 
@@ -118,8 +146,17 @@ def checkcoin(symbol, riseprice, stoploss, original_price, orderid, quantity, lo
 
         db.update({'orderid': order['orderId'], 'riseprice': new_rise_price, 'stoploss': new_stop_loss}, doc_ids=[doc_id])
 
+    # The price has fallen below the stop loss price. Stop checking the coin.
+    if float(info['price']) < float(stoploss):
+        print(info['symbol'] + " Is BELOW the stop loss price. Check the exchange to check the status of your order.")
+        db.update({'active': "0"}, doc_ids=[doc_id])
+
 
 def update():
+    """
+    Function that runs every X seconds as defined in the settings.conf
+    :return: None
+    """
     refresh = data['settings']['refresh']
     threading.Timer(refresh, update).start()
     i = 1
@@ -133,7 +170,6 @@ def update():
             checkcoin(result['symbol'], result['riseprice'], result['stoploss'], result['original_price'], result['orderid'], result['quantity'], result['loss_percent'],
                       result['gain_percent'], result['precision'], i)
         i += 1
-
 
 
 def checkbalance(quantity, balance):
