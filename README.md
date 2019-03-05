@@ -84,6 +84,10 @@ Editing Options:
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
 
+## Examples
+Bought beginning of breakout. As the coin went up (1%) the trail was set at 2% below.
+![example1](https://github.com/Charlita/CoinTrailing/blob/master/examples/example1.png)
+
 ## Donate
 If this script helped you out feel free to donate.
 * BTC: bc1qpszmsad8rcy50ze9wg7ntcxuktqmnuywfy3ucq
