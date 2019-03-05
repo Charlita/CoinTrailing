@@ -1,5 +1,5 @@
 # CoinTrailing
-Allows for the creation of a trailing stop loss on Binance
+Allows for the creation of a trailing stop loss on Binance. Great for securing profits, or for coins that have a history of pumping.
 
 ## Support
 **Discord Chat for live support and general chat https://discord.gg/hxWGneV**
@@ -29,8 +29,12 @@ tinydb
 
 ### Installing
 
+**When creating an API key, I suggest NOT allowing withdrawals.**
+
 Run run.py in CMD and follow the installation instructions:
 ```
+Enter your Binance API Key:
+Enter your Binance API Secret Key:
 How often (in seconds) would you like to check the coin's price? Default 5: 5
 What coin would you like to trail? Ex. LTC: BNB
 What coin would you like to pair X with? Ex. BTC: BTC
@@ -49,10 +53,28 @@ Current LTCBTC(1) Price: 0.01240500...
 Current BNBBTC(2) Price: 0.00289980...
 ```
 
+## Editing Coins
+Editing Options:
+* Delete Coin
+* Change Rise Percentage
+* Change Stop Loss Percentage
+* Change Quantity
+
+## Changelog
+
+> **v1.0.1**
+> * Added Coin Editing
+> * Added Version Check
+> * Added Logging
+> * Fixed a crash that happened when deleting old orders
+>
+> **v1.0.0**
+> * Initial Release
+
 ## Built With
 
 * [python-binance](https://github.com/sammchardy/python-binance) - Python Binance API
-* [TinyDB](https://tinydb.readthedocs.io/en/latest/)
+* [TinyDB](https://tinydb.readthedocs.io/en/latest/) - Database for Coins
 
 ## Authors
 
