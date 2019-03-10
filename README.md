@@ -2,10 +2,15 @@
 Allows for the creation of a trailing stop loss on Binance. Great for securing profits, or for coins that have a history of pumping.
 
 ## Support
-**Discord Chat for live support and general chat https://discord.gg/hxWGneV**
+**Discord for live support and general chat https://discord.gg/hxWGneV**
 
 ## Disclaimer
 **Use at your own risk.**
+
+## Future Updates
+* Multiple Exchanges (Unfortunately some exchanges do not allow stop-loss orders via API)
+* Fix the interrupt script to immediately stop the program.
+* Add Colorama for colored output
 
 ## Getting Started
 
@@ -27,6 +32,13 @@ Twisted
 tinydb
 ```
 
+When I set this up on a vanilla machine these were the dependencies I had to install via pip:
+```
+pip install requests
+pip install dateparser
+pip install tinydb
+```
+
 ### Installing
 
 **When creating an API key, I suggest NOT allowing withdrawals.**
@@ -44,7 +56,7 @@ What percentage below the price should the stop loss be set at? Default 5: 3
 ```
 
 ### Install Multiple Coins
-After the initial install close the script and re-open. Choose the re-install option and input another coin.
+After the initial install press CTRL+C (This will take a few seconds to register). Choose the re-install option and input another coin.
 The script will automagically check both coins.
 
 When checking multiple coins the output will look like:
@@ -52,6 +64,17 @@ When checking multiple coins the output will look like:
 Current LTCBTC(1) Price: 0.01240500...
 Current BNBBTC(2) Price: 0.00289980...
 ```
+
+
+## Reading The Output
+```
+Current BNBBTC(1) Price: 0.00360890 | Waiting For: 0.0036458 | StopLoss: 0.003357 | Below Start Price of 0.0036097
+```
+* Current Price: The Current Price of the Coin
+* Waiting For: The Rise Price. When it hits this price it will increase the stop loss
+* StopLoss: The StopLoss price. When it hits this price it will no longer check the coin.
+* Above/Below Start: Currently Above/Below the starting price of when you started this script.
+
 
 ## Editing Coins
 Editing Options:

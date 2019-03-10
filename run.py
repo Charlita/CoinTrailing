@@ -1,12 +1,15 @@
 from binance.client import Client
-from tinydb import TinyDB
+from binance.exceptions import BinanceAPIException
+from tinydb import TinyDB, where
 import json
 import threading
 import os
 import urllib.request
 import logging
+import signal
 import sys
 firstrun = True
+timer = True
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 logging.basicConfig(filename=dir_path + '/app.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -14,19 +17,6 @@ logging.basicConfig(filename=dir_path + '/app.log', level=logging.INFO, format='
 db = TinyDB(dir_path + '/db/db.json')
 with open(dir_path + '/settings.conf') as json_data_file:
     data = json.load(json_data_file)
-
-
-# @todo Get CMD colors working :(
-class bcolors:
-    HEADER = ''  # '\033[95m'
-    OKBLUE = ''  # '\033[94m'
-    OKGREEN = ''  # '\033[92m'
-    CYAN = ''  # '\033[0;36;48m'
-    WARNING = ''  # '\033[93m'
-    FAIL = ''  # '\033[91m'
-    ENDC = ''  # '\033[0m'
-
-
 binance = Client(data['api']['key'], data['api']['secret'])
 
 
@@ -51,17 +41,30 @@ def main():
             update()
 
 
+def signal_handler(sig, frame):
+    print("Stopping Script...")
+    global timer
+    timer.cancel()
+    main()
+
+
+signal.signal(signal.SIGINT, signal_handler)
+
+
 def checkupdates(current):
     """
     Checks if there are any new versions of CoinTrailing available.
     :param current: Current version from settings
     :return: Update if available.
     """
-    response = urllib.request.urlopen("http://cointrailing.com/updates/python.txt")
-    urldata = response.read()
-    version = urldata.decode('utf-8')
-    if current < version:
-        print("There is an update available: v" + version + " | Check GitHub for the latest version.")
+    try:
+        response = urllib.request.urlopen("http://cointrailing.com/updates/python.txt")
+        urldata = response.read()
+        version = urldata.decode('utf-8')
+        if current < version:
+            print("There is an update available: v" + version + " | Check GitHub for the latest version.")
+    except Exception as e:
+        print("Error Checking For Updates. Ignoring.", e)
 
 
 def installed():
@@ -135,14 +138,19 @@ def checkcoin(symbol, riseprice, stoploss, original_price, orderid, quantity, lo
     :param doc_id: The ID of the coin from our db.json
     :return: None
     """
-    info = binance.get_symbol_ticker(symbol=symbol)
+    try:
+        info = binance.get_symbol_ticker(symbol=symbol)
+    except BinanceAPIException as e:
+        logging.exception(e)
+        print("Error Getting Symbol Info:", e)
+        return
 
     if info['price'] >= original_price:
-        print(bcolors.CYAN, "Current " + info['symbol'] + "(" + str(doc_id) + ") " + "Price: " + info['price'] + bcolors.ENDC + " | Waiting For:" + str(riseprice) +
-              " | StopLoss: " + str(stoploss))
+        print("Current " + info['symbol'] + "(" + str(doc_id) + ") " + "Price: " + info['price'] + " | Waiting For: " + str(riseprice) +
+              " | StopLoss: " + str(stoploss) + " | Above Start Price of " + str(original_price))
     else:
-        print(bcolors.FAIL, "Current " + info['symbol'] + "(" + str(doc_id) + ") " + "Price: " + info['price'] + bcolors.ENDC + " | Waiting For:" + str(riseprice) +
-              " | StopLoss: " + str(stoploss))
+        print("Current " + info['symbol'] + "(" + str(doc_id) + ") " + "Price: " + info['price'] + " | Waiting For: " + str(riseprice) +
+              " | StopLoss: " + str(stoploss) + " | Below Start Price of " + str(original_price))
 
     # The price has risen above our rise price. Cancel old stop loss and create a new one.
     if float(info['price']) > float(riseprice):
@@ -158,20 +166,25 @@ def checkcoin(symbol, riseprice, stoploss, original_price, orderid, quantity, lo
         print("New Stop Loss:", new_stop_loss)
         print("New Rise Price:", new_rise_price)
 
-        order = binance.create_order(
-            symbol=symbol,
-            side=Client.SIDE_SELL,
-            type=Client.ORDER_TYPE_STOP_LOSS_LIMIT,
-            timeInForce=Client.TIME_IN_FORCE_GTC,
-            quantity=quantity,
-            price=new_stop_loss,
-            stopPrice=new_stop_loss
-        )
-        print("Created New Order (" + str(order['orderId']) + ")")
-        logging.info("Created New Order for: " + symbol + "(" + str(doc_id) + ") | New Order ID: " + str(order['orderId']))
-        # print(order)
+        try:
+            order = binance.create_order(
+                symbol=symbol,
+                side=Client.SIDE_SELL,
+                type=Client.ORDER_TYPE_STOP_LOSS_LIMIT,
+                timeInForce=Client.TIME_IN_FORCE_GTC,
+                quantity=quantity,
+                price=new_stop_loss,
+                stopPrice=new_stop_loss
+            )
+        except BinanceAPIException as e:
+            logging.exception(e)
+            print("Error Creating New Order:", e)
+        else:
+            print("Created New Order (" + str(order['orderId']) + ")")
+            logging.info("Created New Order for: " + symbol + "(" + str(doc_id) + ") | New Order ID: " + str(order['orderId']))
+            # print(order)
 
-        db.update({'orderid': order['orderId'], 'riseprice': new_rise_price, 'stoploss': new_stop_loss}, doc_ids=[doc_id])
+            db.update({'orderid': order['orderId'], 'riseprice': new_rise_price, 'stoploss': new_stop_loss}, doc_ids=[doc_id])
 
     # The price has fallen below the stop loss price. Stop checking the coin.
     if float(info['price']) < float(stoploss):
@@ -187,12 +200,22 @@ def update():
     :return: None
     """
     refresh = data['settings']['refresh']
-    threading.Timer(refresh, update).start()
+    global timer
+    timer = threading.Timer(refresh, update)
+    timer.start()
     i = 1
 
+    # Let's check if there are NO active coins, if so, we will go back to main()
+    search = db.search(where('active') == '1')
+    if not search:
+        print("No Active Coins Available. Please Edit Your Coins or Re-Install")
+        timer.cancel()
+        main()
+
     while not i <= len(db):
-        print("No Active Coins Available.")
-        sys.exit()
+        print("No Active Coins Created. Please Re-Install")
+        timer.cancel()
+        main()
 
     while i <= len(db):
         result = db.get(doc_id=i)
@@ -223,7 +246,12 @@ def getprecision(pair):
     :param pair: The coin pair we are checking. Ex LTCBTC
     :return: The precision allowed by the exchange
     """
-    details = binance.get_symbol_info(pair)
+    try:
+        details = binance.get_symbol_info(pair)
+    except BinanceAPIException as e:
+        print("Error Getting Symbol Info (Precision): ", e)
+        logging.exception(e)
+        sys.exit()
     precision = details['filters'][0]['tickSize']
     precision = precision.replace("0.", ".", 1)
     precision = precision.rindex("1")
@@ -231,6 +259,11 @@ def getprecision(pair):
 
 
 def validcoin(doc_id):
+    """
+    Used to check user input on the editcoins function.
+    :param doc_id: Coin ID in database
+    :return: 1 if valid.
+    """
     editcoin = db.contains(doc_ids=[int(doc_id)])
     if editcoin:
         return 1
@@ -239,6 +272,10 @@ def validcoin(doc_id):
 
 
 def editcoins():
+    """
+    Function for editing/deleting existing coins.
+    :return: None
+    """
     print("Here is a list of your current coins:")
     i = 1
 
@@ -257,7 +294,7 @@ def editcoins():
     coinid = input("What coin would you like to edit? (Enter Coin ID): ") or 0
 
     while not validcoin(coinid):
-        print(bcolors.FAIL + "The coin ID you entered is incorrect. Let's try again" + bcolors.ENDC)
+        print("The coin ID you entered is incorrect. Let's try again")
         coinid = input("What coin would you like to edit? (Enter Coin ID): ")
 
     editcoin = db.get(doc_id=int(coinid))
@@ -265,11 +302,22 @@ def editcoins():
     print("Editing " + editcoin['symbol'] + "(" + str(coinid) + ")")
     delete = input("Would you like to delete this coin? Type Y to delete: ") or "N"
     if delete.upper() == "Y":
-        oldorder = binance.get_order(symbol=editcoin['symbol'], orderId=editcoin['orderid'])
+        try:
+            oldorder = binance.get_order(symbol=editcoin['symbol'], orderId=editcoin['orderid'])
+        except BinanceAPIException as e:
+            print("Error Getting Order Info: ", e)
+            logging.exception(e)
+            sys.exit()
         if oldorder['status'] == "NEW":
             print("Order is still open. We will cancel it before deleting.")
-            binance.cancel_order(symbol=editcoin['coin'], orderId=oldorder['orderId'])
-            logging.info("Canceled Old Order For: " + editcoin['coin'] + "(" + str(coinid) + ") | Order ID: " + str(oldorder['orderId']))
+            try:
+                binance.cancel_order(symbol=editcoin['coin'], orderId=oldorder['orderId'])
+            except BinanceAPIException as e:
+                print("Error Canceling Old Order: ", e)
+                logging.exception(e)
+                sys.exit()
+            else:
+                logging.info("Canceled Old Order For: " + editcoin['coin'] + "(" + str(coinid) + ") | Order ID: " + str(oldorder['orderId']))
         db.remove(doc_ids=[int(coinid)])
         print("Coin Deleted.")
         main()
@@ -287,18 +335,24 @@ def editcoins():
 
             totalbalance = float(balance['free']) + float(balance['locked'])
             while not checkbalance(quantity, totalbalance):
-                print(bcolors.FAIL + "The quantity you entered is greater than your available balance. Let's try again" + bcolors.ENDC)
+                print("The quantity you entered is greater than your available balance. Let's try again")
                 quantity = input("What quantity would you like to sell? Keep in mind the current quantity(" + str(editcoin['quantity']) + ") is in 'Locked' because it's in an order: ")
 
             print("Canceling old order(" + str(oldorder['orderId']) + ")")
-            binance.cancel_order(symbol=editcoin['symbol'], orderId=oldorder['orderId'])
-            logging.info("Canceled Old Order For: " + editcoin['coin'] + "(" + str(coinid) + ") | Order ID: " + str(oldorder['orderId']))
+            try:
+                binance.cancel_order(symbol=editcoin['symbol'], orderId=oldorder['orderId'])
+            except BinanceAPIException as e:
+                print("Error Canceling Old Order: ", e)
+                logging.exception(e)
+                sys.exit()
+            else:
+                logging.info("Canceled Old Order For: " + editcoin['coin'] + "(" + str(coinid) + ") | Order ID: " + str(oldorder['orderId']))
         else:
             print("Order is closed. We will create a new order upon editing")
             print("Your current balance for " + editcoin['coin'] + " is: Free(" + str(balance['free']) + ") | Locked: (" + str(balance['locked']) + ")")
             quantity = input("What quantity would you like to sell? Current " + str(editcoin['quantity']) + ": ") or editcoin['quantity']
             while not checkbalance(quantity, balance['free']):
-                print(bcolors.FAIL + "The quantity you entered is greater than your available balance. Let's try again" + bcolors.ENDC)
+                print("The quantity you entered is greater than your available balance. Let's try again")
                 quantity = input("What quantity would you like to sell?: ")
 
         print("Quantity: " + quantity)
@@ -311,20 +365,25 @@ def editcoins():
         new_stop_loss = float(precision.format(new_stop_loss))
         new_rise_price = rise_price(info['price'], rise)
         new_rise_price = float(precision.format(new_rise_price))
-        order = binance.create_order(
-            symbol=editcoin['symbol'],
-            side=Client.SIDE_SELL,
-            type=Client.ORDER_TYPE_STOP_LOSS_LIMIT,
-            timeInForce=Client.TIME_IN_FORCE_GTC,
-            quantity=quantity,
-            price=new_stop_loss,
-            stopPrice=new_stop_loss
-        )
+        try:
+            order = binance.create_order(
+                symbol=editcoin['symbol'],
+                side=Client.SIDE_SELL,
+                type=Client.ORDER_TYPE_STOP_LOSS_LIMIT,
+                timeInForce=Client.TIME_IN_FORCE_GTC,
+                quantity=quantity,
+                price=new_stop_loss,
+                stopPrice=new_stop_loss
+            )
+        except BinanceAPIException as e:
+            print("Error Creating New Order: ", e)
+            logging.exception(e)
+            sys.exit()
         print("New Stop Loss:", new_stop_loss)
         print("New Rise Price:", new_rise_price)
         print("Created New Order (" + str(order['orderId']) + ")")
         logging.info("Created New Order for: " + editcoin['symbol'] + "(" + str(coinid) + ") | New Order ID: " + str(order['orderId']))
-        db.update({'orderid': order['orderId'], 'active': '1', 'quantity': quantity, 'gain_percent': rise, 'loss_percent': stop, 'riseprice': new_rise_price, 'stoploss': new_stop_loss},
+        db.update({'orderid': order['orderId'], 'original_price': info['price'], 'active': '1', 'quantity': quantity, 'gain_percent': rise, 'loss_percent': stop, 'riseprice': new_rise_price, 'stoploss': new_stop_loss},
                   doc_ids=[int(coinid)])
         print("Coin Updated.")
         main()
@@ -348,17 +407,27 @@ def install():
     data['settings']['refresh'] = refresh
     coin = input("What coin would you like to trail? Ex. LTC: ")
     while not coin:
-        print(bcolors.FAIL + "You did not enter a coin. Let's try again" + bcolors.ENDC)
+        print("You did not enter a coin. Let's try again")
         coin = input("What coin would you like to trail? Ex. LTC: ")
     coin.upper()
 
     global binance
-    binance = Client(data['api']['key'], data['api']['secret'])
-    balance = binance.get_asset_balance(coin)
+    try:
+        binance = Client(data['api']['key'], data['api']['secret'])
+    except BinanceAPIException as e:
+        print("Error Getting Binance Client: ", e)
+        logging.exception(e)
+        sys.exit()
+    try:
+        balance = binance.get_asset_balance(coin)
+    except BinanceAPIException as e:
+        print("Error Getting Asset Balance: ", e)
+        logging.exception(e)
+        sys.exit()
 
     pair = input("What coin would you like to pair " + coin + " with? Ex. BTC: ")
     while not pair:
-        print(bcolors.FAIL + "You did not enter a pair. Let's try again" + bcolors.ENDC)
+        print("You did not enter a pair. Let's try again")
         pair = input("What coin would you like to pair " + coin + " with? Ex. BTC: ")
     pair.upper()
 
@@ -369,14 +438,19 @@ def install():
     quantity = input("If the quantity is below 1 start with '0.' Ex. 0.113 : ")
 
     while not checkbalance(quantity, balance['free']):
-        print(bcolors.FAIL + "The quantity you entered is greater than your available balance. Let's try again" + bcolors.ENDC)
+        print("The quantity you entered is greater than your available balance. Let's try again")
         quantity = input("What quantity would you like to sell?: ")
 
     rise = int(input("What percentage above the price should the rise price be set at? Default 1: ") or 1)
     stop = int(input("What percentage below the price should the stop loss be set at? Default 5: ") or 5)
     print("==============================================================")
     print("Ok let's get started...")
-    current = binance.get_symbol_ticker(symbol=symbol)
+    try:
+        current = binance.get_symbol_ticker(symbol=symbol)
+    except BinanceAPIException as e:
+        print("Error Getting Symbol Ticker: ", e)
+        logging.exception(e)
+        sys.exit()
     print("Current " + symbol + " Price: " + current['price'])
     precision = getprecision(symbol)
     print("Tick Size (Precision): " + str(precision))
@@ -388,16 +462,20 @@ def install():
     rise_price_local = float(precision_format.format(rise_price(current['price'], rise)))
     print("Stop Loss: " + str(stop_loss_local))
     print("Rise Price: " + str(rise_price_local))
-
-    order = binance.create_order(
-        symbol=symbol,
-        side=Client.SIDE_SELL,
-        type=Client.ORDER_TYPE_STOP_LOSS_LIMIT,
-        timeInForce=Client.TIME_IN_FORCE_GTC,
-        quantity=quantity,
-        price=stop_loss_local,
-        stopPrice=stop_loss_local
-    )
+    try:
+        order = binance.create_order(
+            symbol=symbol,
+            side=Client.SIDE_SELL,
+            type=Client.ORDER_TYPE_STOP_LOSS_LIMIT,
+            timeInForce=Client.TIME_IN_FORCE_GTC,
+            quantity=quantity,
+            price=stop_loss_local,
+            stopPrice=stop_loss_local
+        )
+    except BinanceAPIException as e:
+        print("Error Creating New Order: ", e)
+        logging.exception(e)
+        sys.exit()
     print("Created New Order (" + str(order['orderId']) + ")")
     logging.info("Created New Order for: " + symbol + " | New Order ID: " + str(order['orderId']))
 
