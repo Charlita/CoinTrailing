@@ -1,6 +1,8 @@
 # CoinTrailing
 Allows for the creation of a trailing stop loss on Binance. Great for securing profits, or for coins that have a history of pumping.
 
+*This is my first Python script, I decided to write it to help me learn Python. If there are any issues please let me know via Discord or issues/pull requests*
+
 ## Support
 **Discord for live support and general chat https://discord.gg/hxWGneV**
 
