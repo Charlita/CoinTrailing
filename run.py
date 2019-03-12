@@ -217,12 +217,11 @@ def update():
         timer.cancel()
         main()
 
-    while i <= len(db):
-        result = db.get(doc_id=i)
+    result = db.all()
+    for result in result:
         if result['active'] == "1":
-            checkcoin(result['symbol'], result['riseprice'], result['stoploss'], result['original_price'], result['orderid'], result['quantity'], result['loss_percent'],
-                      result['gain_percent'], result['precision'], i)
-        i += 1
+            checkcoin(result['symbol'], result['riseprice'], result['stoploss'], result['original_price'], result['lastprice'], result['orderid'], result['quantity'], result['loss_percent'],
+                      result['gain_percent'], result['precision'], result.doc_id)
 
 
 def checkbalance(quantity, balance):
