@@ -72,7 +72,7 @@ Current BNBBTC(2) Price: 0.00289980...
 
 ## Reading The Output
 ```
-Current BNBBTC(1) Price: 0.00360890 | Waiting For: 0.0036458 | StopLoss: 0.003357 | Below Start Price of 0.0036097
+Current BNBBTC(1) Price: 0.00360890 | Waiting For: 0.0036458 | StopLoss: 0.003357 | StopLoss is Above Starting Price
 ```
 * Current Price: The Current Price of the Coin
 * Waiting For: The Rise Price. When it hits this price it will increase the stop loss
