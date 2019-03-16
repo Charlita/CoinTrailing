@@ -12,7 +12,7 @@ Allows for the creation of a trailing stop loss on Binance. Great for securing p
 ## Future Updates
 * Multiple Exchanges (Unfortunately some exchanges do not allow stop-loss orders via API)
 * Fix the interrupt script to immediately stop the program.
-* Add Colorama for colored output
+* Add a Static GUI to beautify the CMD output
 
 ## Getting Started
 
@@ -32,6 +32,7 @@ requests
 service-identity
 Twisted
 tinydb
+colorama
 ```
 
 When I set this up on a vanilla machine these were the dependencies I had to install via pip:
@@ -39,6 +40,7 @@ When I set this up on a vanilla machine these were the dependencies I had to ins
 pip install requests
 pip install dateparser
 pip install tinydb
+pip install colorama
 ```
 
 ### Installing
@@ -87,6 +89,10 @@ Editing Options:
 
 ## Changelog
 
+> **v1.0.2**
+> * Added Colorama for colored output
+> * [Bug Fix] If the ID of the first coin in TinyDB didn't start with 1 the script would crash.
+>
 > **v1.0.1**
 > * Added Coin Editing
 > * Added Version Check
@@ -112,6 +118,9 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 ## Examples
 Bought beginning of breakout. As the coin went up (1%) the trail was set at 2% below.
 ![example1](https://github.com/Charlita/CoinTrailing/blob/master/examples/example1.png)
+
+This example shows what happens when the stop-loss price goes ABOVE your starting price. This means even if your stop loss is hit you still made profit.
+![example2](https://github.com/Charlita/CoinTrailing/blob/master/examples/example2.png)
 
 ## Donate
 If this script helped you out feel free to donate.

@@ -8,6 +8,8 @@ import urllib.request
 import logging
 import signal
 import sys
+from colorama import init, Fore, Style
+init()
 firstrun = True
 timer = True
 
@@ -41,11 +43,13 @@ def main():
             update()
 
 
+# @todo this is throwing unhandled exceptions. Will fix later.
 def signal_handler(sig, frame):
-    print("Stopping Script...")
-    global timer
-    timer.cancel()
-    main()
+    # print("Stopping Script...")
+    # global timer
+    # timer.cancel()
+    # main()
+    sys.exit()
 
 
 signal.signal(signal.SIGINT, signal_handler)
@@ -105,11 +109,14 @@ def rise_price(current, gain_percent):
     return riseprice
 
 
-def addcoin(symbol, coin, pair, original_price, gain_percent, loss_percent, stoploss, riseprice, quantity, precision, orderid):
+def addcoin(symbol, coin, pair, original_price, lastprice, gain_percent, loss_percent, stoploss, riseprice, quantity, precision, orderid):
     """
     Adds a coin to our db.json
     :param symbol: Symbol Pair Example: LTCBTC
+    :param coin: The coin you are trading. From Above Example: LTC
+    :param pair: The coin you are pairing with. From Above Example: BTC
     :param original_price: Starting price
+    :param lastprice: The last price of the coin
     :param gain_percent: Percentage above the starting price for the rise price
     :param loss_percent: Percentage below the price for the stoploss
     :param stoploss: The current stoploss price
@@ -119,17 +126,18 @@ def addcoin(symbol, coin, pair, original_price, gain_percent, loss_percent, stop
     :param orderid: The order ID from Binance
     :return: None
     """
-    db.insert({'symbol': symbol, 'coin': coin, 'pair': pair, 'original_price': original_price, 'gain_percent': gain_percent, 'loss_percent': loss_percent, 'stoploss': stoploss, 'riseprice': riseprice,
+    db.insert({'symbol': symbol, 'coin': coin, 'pair': pair, 'original_price': original_price, 'lastprice': lastprice, 'gain_percent': gain_percent, 'loss_percent': loss_percent, 'stoploss': stoploss, 'riseprice': riseprice,
                'quantity': quantity, 'precision': precision, 'active': "1", 'orderid': orderid})
 
 
-def checkcoin(symbol, riseprice, stoploss, original_price, orderid, quantity, loss_percent, gain_percent, precision, doc_id):
+def checkcoin(symbol, riseprice, stoploss, original_price, lastprice, orderid, quantity, loss_percent, gain_percent, precision, doc_id):
     """
     Checks the current price against the rise price and stoploss price
     :param symbol: Symbol Pair Example: LTCBTC
     :param riseprice: Price that once hit we remove old stop loss and create a new one
     :param stoploss: Current stop loss price. Stop checking coin if we fall below this.
     :param original_price: Starting price
+    :param lastprice: The last price of the coin
     :param orderid: The order ID from Binance
     :param quantity: The quantity of the coin you are selling
     :param loss_percent: Percentage below the price for the stoploss
@@ -145,12 +153,17 @@ def checkcoin(symbol, riseprice, stoploss, original_price, orderid, quantity, lo
         print("Error Getting Symbol Info:", e)
         return
 
-    if info['price'] >= original_price:
-        print("Current " + info['symbol'] + "(" + str(doc_id) + ") " + "Price: " + info['price'] + " | Waiting For: " + str(riseprice) +
-              " | StopLoss: " + str(stoploss) + " | Above Start Price of " + str(original_price))
+    if float(stoploss) >= float(original_price):
+        gainstatus = " | " + Fore.GREEN + "StopLoss is Above Starting Price" + Style.RESET_ALL
     else:
-        print("Current " + info['symbol'] + "(" + str(doc_id) + ") " + "Price: " + info['price'] + " | Waiting For: " + str(riseprice) +
-              " | StopLoss: " + str(stoploss) + " | Below Start Price of " + str(original_price))
+        gainstatus = " | " + Fore.RED + "StopLoss is Below Starting Price" + Style.RESET_ALL
+
+    if info['price'] >= lastprice:
+        print("Current " + info['symbol'] + "(" + str(doc_id) + ") " + "Price: " + Fore.GREEN + info['price'] + Style.RESET_ALL + " | Waiting For: " + Fore.YELLOW + str(riseprice)
+              + Style.RESET_ALL + " | StopLoss: " + Fore.CYAN + str(stoploss) + Style.RESET_ALL + gainstatus)
+    else:
+        print("Current " + info['symbol'] + "(" + str(doc_id) + ") " + "Price: " + Fore.RED + info['price'] + Style.RESET_ALL + " | Waiting For: " + Fore.YELLOW + str(riseprice)
+              + Style.RESET_ALL + " | StopLoss: " + Fore.CYAN + str(stoploss) + Style.RESET_ALL + gainstatus)
 
     # The price has risen above our rise price. Cancel old stop loss and create a new one.
     if float(info['price']) > float(riseprice):
@@ -184,7 +197,7 @@ def checkcoin(symbol, riseprice, stoploss, original_price, orderid, quantity, lo
             logging.info("Created New Order for: " + symbol + "(" + str(doc_id) + ") | New Order ID: " + str(order['orderId']))
             # print(order)
 
-            db.update({'orderid': order['orderId'], 'riseprice': new_rise_price, 'stoploss': new_stop_loss}, doc_ids=[doc_id])
+            db.update({'orderid': order['orderId'], 'lastprice': info['price'], 'riseprice': new_rise_price, 'stoploss': new_stop_loss}, doc_ids=[doc_id])
 
     # The price has fallen below the stop loss price. Stop checking the coin.
     if float(info['price']) < float(stoploss):
@@ -192,6 +205,8 @@ def checkcoin(symbol, riseprice, stoploss, original_price, orderid, quantity, lo
         db.update({'active': "0"}, doc_ids=[doc_id])
         print("No Longer Checking " + info['symbol'] + "(" + str(doc_id) + ")")
         logging.info(info['symbol'] + " Is BELOW the stop loss price. No longer checking.")
+
+    db.update({'lastprice': info['price']}, doc_ids=[doc_id])
 
 
 def update():
@@ -217,12 +232,11 @@ def update():
         timer.cancel()
         main()
 
-    while i <= len(db):
-        result = db.get(doc_id=i)
+    result = db.all()
+    for result in result:
         if result['active'] == "1":
-            checkcoin(result['symbol'], result['riseprice'], result['stoploss'], result['original_price'], result['orderid'], result['quantity'], result['loss_percent'],
-                      result['gain_percent'], result['precision'], i)
-        i += 1
+            checkcoin(result['symbol'], result['riseprice'], result['stoploss'], result['original_price'], result['lastprice'], result['orderid'], result['quantity'], result['loss_percent'],
+                      result['gain_percent'], result['precision'], result.doc_id)
 
 
 def checkbalance(quantity, balance):
@@ -383,8 +397,8 @@ def editcoins():
         print("New Rise Price:", new_rise_price)
         print("Created New Order (" + str(order['orderId']) + ")")
         logging.info("Created New Order for: " + editcoin['symbol'] + "(" + str(coinid) + ") | New Order ID: " + str(order['orderId']))
-        db.update({'orderid': order['orderId'], 'original_price': info['price'], 'active': '1', 'quantity': quantity, 'gain_percent': rise, 'loss_percent': stop, 'riseprice': new_rise_price, 'stoploss': new_stop_loss},
-                  doc_ids=[int(coinid)])
+        db.update({'orderid': order['orderId'], 'original_price': info['price'], 'lastprice': info['price'], 'active': '1', 'quantity': quantity, 'gain_percent': rise, 'loss_percent': stop,
+                   'riseprice': new_rise_price, 'stoploss': new_stop_loss}, doc_ids=[int(coinid)])
         print("Coin Updated.")
         main()
 
@@ -479,7 +493,7 @@ def install():
     print("Created New Order (" + str(order['orderId']) + ")")
     logging.info("Created New Order for: " + symbol + " | New Order ID: " + str(order['orderId']))
 
-    addcoin(symbol, coin.upper(), pair.upper(), current['price'], rise, stop, stop_loss_local, rise_price_local, quantity, precision, order['orderId'])
+    addcoin(symbol, coin.upper(), pair.upper(), current['price'], current['price'], rise, stop, stop_loss_local, rise_price_local, quantity, precision, order['orderId'])
 
     data['settings']['install'] = 1
     # Save settings to settings.conf
