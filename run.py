@@ -1,5 +1,5 @@
 from binance.client import Client
-from binance.exceptions import BinanceAPIException
+from binance.exceptions import BinanceAPIException, BinanceRequestException
 from tinydb import TinyDB, where
 import json
 import threading
@@ -19,7 +19,7 @@ logging.basicConfig(filename=dir_path + '/app.log', level=logging.INFO, format='
 db = TinyDB(dir_path + '/db/db.json')
 with open(dir_path + '/settings.conf') as json_data_file:
     data = json.load(json_data_file)
-binance = Client(data['api']['key'], data['api']['secret'])
+binance = Client(data['api']['key'], data['api']['secret'], {"timeout": 20})
 
 
 def main():
@@ -148,7 +148,7 @@ def checkcoin(symbol, riseprice, stoploss, original_price, lastprice, orderid, q
     """
     try:
         info = binance.get_symbol_ticker(symbol=symbol)
-    except BinanceAPIException as e:
+    except (BinanceAPIException, BinanceRequestException) as e:
         logging.exception(e)
         print("Error Getting Symbol Info:", e)
         return
@@ -173,9 +173,9 @@ def checkcoin(symbol, riseprice, stoploss, original_price, lastprice, orderid, q
         new_stop_loss = stop_loss_price(info['price'], loss_percent)
         precision = "{0:." + str(precision) + "f}"
         # We have to add this precision format because Binance only allows so many decimal places per coin.
-        new_stop_loss = float(precision.format(new_stop_loss))
+        new_stop_loss = precision.format(new_stop_loss)
         new_rise_price = rise_price(info['price'], gain_percent)
-        new_rise_price = float(precision.format(new_rise_price))
+        new_rise_price = precision.format(new_rise_price)
         print("New Stop Loss:", new_stop_loss)
         print("New Rise Price:", new_rise_price)
 
@@ -292,18 +292,16 @@ def editcoins():
     """
     print("Here is a list of your current coins:")
     i = 1
-
     while not i <= len(db):
         print("No Active Coins Available.")
-        sys.exit()
+        main()
 
-    while i <= len(db):
-        result = db.get(doc_id=i)
+    result = db.all()
+    for result in result:
         if result['active'] == "1":
-            print("Active: Symbol: " + result['symbol'] + " | Gain %: " + str(result['gain_percent']) + " | Loss %: " + str(result['loss_percent']) + " | ID: " + str(i))
+            print("Active: Symbol: " + result['symbol'] + " | Gain %: " + str(result['gain_percent']) + " | Loss %: " + str(result['loss_percent']) + " | ID: " + str(result.doc_id))
         else:
-            print("NOT Active: Symbol: " + result['symbol'] + " | Gain %: " + str(result['gain_percent']) + " | Loss %: " + str(result['loss_percent']) + " | ID: " + str(i))
-        i += 1
+            print("NOT Active: Symbol: " + result['symbol'] + " | Gain %: " + str(result['gain_percent']) + " | Loss %: " + str(result['loss_percent']) + " | ID: " + str(result.doc_id))
 
     coinid = input("What coin would you like to edit? (Enter Coin ID): ") or 0
 
@@ -376,9 +374,9 @@ def editcoins():
         new_stop_loss = stop_loss_price(info['price'], stop)
         precision = "{0:." + str(editcoin['precision']) + "f}"
         # We have to add this precision format because Binance only allows so many decimal places per coin.
-        new_stop_loss = float(precision.format(new_stop_loss))
+        new_stop_loss = precision.format(new_stop_loss)
         new_rise_price = rise_price(info['price'], rise)
-        new_rise_price = float(precision.format(new_rise_price))
+        new_rise_price = precision.format(new_rise_price)
         try:
             order = binance.create_order(
                 symbol=editcoin['symbol'],
@@ -423,7 +421,6 @@ def install():
     while not coin:
         print("You did not enter a coin. Let's try again")
         coin = input("What coin would you like to trail? Ex. LTC: ")
-    coin.upper()
 
     global binance
     try:
@@ -433,19 +430,18 @@ def install():
         logging.exception(e)
         sys.exit()
     try:
-        balance = binance.get_asset_balance(coin)
+        balance = binance.get_asset_balance(coin.upper())
     except BinanceAPIException as e:
         print("Error Getting Asset Balance: ", e)
         logging.exception(e)
         sys.exit()
 
-    pair = input("What coin would you like to pair " + coin + " with? Ex. BTC: ")
+    pair = input("What coin would you like to pair " + coin.upper() + " with? Ex. BTC: ")
     while not pair:
         print("You did not enter a pair. Let's try again")
-        pair = input("What coin would you like to pair " + coin + " with? Ex. BTC: ")
-    pair.upper()
+        pair = input("What coin would you like to pair " + coin.upper() + " with? Ex. BTC: ")
 
-    symbol = coin + pair
+    symbol = coin.upper() + pair.upper()
     print("You will be trading " + symbol)
     print("Your available balance is: " + balance['free'])
     print("What quantity would you like to sell?")
@@ -472,10 +468,10 @@ def install():
     # We format the stop loss and rise price because Binance has Trading Rules that only allow X amount of decimal places. This is called "Min Tick Size" on their website.
     # Binance Trading Rules: https://support.binance.com/hc/en-us/articles/115000594711-Trading-Rule
     precision_format = "{0:." + str(precision) + "f}"
-    stop_loss_local = float(precision_format.format(stop_loss_price(current['price'], stop)))
-    rise_price_local = float(precision_format.format(rise_price(current['price'], rise)))
-    print("Stop Loss: " + str(stop_loss_local))
-    print("Rise Price: " + str(rise_price_local))
+    stop_loss_local = precision_format.format(stop_loss_price(current['price'], stop))
+    rise_price_local = precision_format.format(rise_price(current['price'], rise))
+    print("Stop Loss: ", stop_loss_local)
+    print("Rise Price: ", rise_price_local)
     try:
         order = binance.create_order(
             symbol=symbol,
