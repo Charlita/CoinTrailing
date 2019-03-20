@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='CoinTrailing',
-    version='1.0.0',
+    version='1.0.2',
     packages=['binance'],
     url='http://cointrailing.com',
     license='MIT',
